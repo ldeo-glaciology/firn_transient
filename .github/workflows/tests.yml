@@ -56,4 +56,4 @@ jobs:
           MPLBACKEND: Agg
           MPLCONFIGDIR: /tmp/matplotlib
           XDG_CACHE_HOME: /tmp/.cache
-        run: uv run pytest -v
+        run: .venv/bin/pytest -v
