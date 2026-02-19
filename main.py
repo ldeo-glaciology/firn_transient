@@ -1,4 +1,12 @@
+import time
+import warnings
+
 import matplotlib.pyplot as plt
+import numpy as np
+import numpy.matlib
+import xarray as xr
+from scipy import integrate, interpolate
+from scipy.sparse import spdiags
 
 
 class FirnModel:
@@ -39,8 +47,6 @@ class FirnModel:
         interp_on_reg_z=False,
         print_messages=True,
     ):
-        import numpy as np
-
         self.p = {
             "sim_label": sim_label,
             "b0_mpy": b0_mpy,
@@ -190,13 +196,6 @@ class FirnModel:
         return self
 
     def run(self):
-        from scipy import integrate
-        from scipy import interpolate
-        import numpy.matlib
-        import numpy as np
-        import time
-        import warnings
-
         simDuration = self.p["simDuration"]
         beta = self.p["beta"]
         if self.p["scaleDuration"]:
@@ -272,7 +271,6 @@ class FirnModel:
             z830[i] = f(1 - 830 / self.p["rho_i"])
 
         ### Create output xarray
-        import xarray as xr
         out = xr.Dataset(
             data_vars=dict(
                 phi=(["z_h", "t"], phi),
@@ -517,16 +515,11 @@ class FirnModel:
         >>> sim.interp_at_depth(depth_to_interp=30, var_name="A")
         """
 
-        import warnings
         warnings.warn(
             "This method is outdated. You are better off applying "
             "fcm.interp_regular_z to the variable you are interested in, "
             "to interpolate it on to a regular vertical grid."
         )
-
-        from scipy import interpolate
-        import numpy as np
-        import xarray as xr
 
         name_for_new_var = var_name + "_" + str(depth_to_interp)
 
@@ -566,10 +559,6 @@ class FirnModel:
         >>> sim.interp_regular_z(var_name="A")
         This will produce a new variable called A_r and a new dimension cooridnate called z_r.
         """
-
-        from scipy import interpolate
-        import numpy as np
-        import xarray as xr
 
         z_q = np.linspace(0, 1.2, round(self.p["N"] * 1.2))  # query points for interpolation
         Nz = len(z_q)
@@ -615,8 +604,6 @@ class FirnModel:
 
     # Model equations
     def eqns(self, t, y):
-        from scipy import integrate
-        import numpy as np
         Ly = len(y)
 
         z_h = self.p["z_h"]
@@ -693,10 +680,6 @@ class FirnModel:
     # upwind_difference_matrix
     def upwind_difference_matrix(self, z0, zL, n, v):
         # Adapted from Kerschbaum, Simon. (2020). Backstepping Control of Coupled Parabolic Systems with Varying Parameters: A Matlab Library (1.0). Zenodo. https://doi.org/10.5281/zenodo.4274740
-
-
-        from scipy.sparse import spdiags
-        import numpy as np
         dz = (zL - z0) / (n - 1)
 
         # (1) finite difference approximation for positive v
