@@ -21,6 +21,7 @@ class FirnModel:
         self.results = None  # attribute to hold results
 
     def run_single(self, **kwargs):
+        """Backward-compatible wrapper that runs the model once."""
         self.run(**kwargs)
 
     def setup(
@@ -47,6 +48,12 @@ class FirnModel:
         interp_on_reg_z=False,
         print_messages=True,
     ):
+        """
+        Configure model parameters, scales, grids, and initial conditions.
+
+        Returns:
+            FirnModel: This instance, with parameters and initial state stored in ``self.p``.
+        """
         self.p = {
             "sim_label": sim_label,
             "b0_mpy": b0_mpy,
@@ -196,6 +203,12 @@ class FirnModel:
         return self
 
     def run(self):
+        """
+        Integrate the model equations and store outputs in ``self.results``.
+
+        Returns:
+            xarray.Dataset: Time-evolving model outputs and derived diagnostics.
+        """
         simDuration = self.p["simDuration"]
         beta = self.p["beta"]
         if self.p["scaleDuration"]:
@@ -421,10 +434,10 @@ class FirnModel:
         is much larger than the duration of the simulation, this means that the
         default is the final time step.
 
-        For example, if the simulation have been run as follows:
-        >>> import fcm
-        >>> sim = fcm.fcm()
-        >>> sim.integrate()
+        For example, if the simulation has been run as follows:
+        >>> sim = FirnModel()
+        >>> sim.setup()
+        >>> sim.run()
 
         You can plot a single profile of porosity with
         >>> sim.profiles("phi", 0.4)
@@ -434,7 +447,7 @@ class FirnModel:
         or
         >>> sim.profiles("A", [0, 0.1, 4])
 
-        If no time steps correspon exactly to the requests simulation times,
+        If no time steps correspond exactly to the requests simulation times,
         the nearest time step will be selected.
 
         """
@@ -451,11 +464,10 @@ class FirnModel:
         This has to be one which varies with depth and time:
         e.g., phi, r2, rho, A, or T. The default is the porosity, phi.
 
-
-        For example, if the simulation have been run as follows:
-        >>> import fcm
-        >>> sim = fcm.fcm()
-        >>> sim.integrate()
+        For example, if the simulation has been run as follows:
+        >>> sim = FirnModel()
+        >>> sim.setup()
+        >>> sim.run()
 
         you can plot a depth-time plot with
         >>> sim.z_t_plot("phi")
@@ -482,10 +494,10 @@ class FirnModel:
         Creates a plot of the a time series of the prescribed variable.
 
         Usage:
-        For example, if the simulation have been run as follows:
-        >>> import fcm
-        >>> sim = fcm.fcm()
-        >>> sim.integrate()
+        For example, if the simulation has been run as follows:
+        >>> sim = FirnModel()
+        >>> sim.setup()
+        >>> sim.run()
 
         you can plot a time series plot with
         >>> sim.time_series("FAC")
@@ -550,8 +562,7 @@ class FirnModel:
 
         Usage:
         If the simulation has been run as follows:
-        >>> import fcm
-        >>> sim = fcm.fcm()
+        >>> sim = FirnModel()
         >>> sim.setup()
         >>> sim.run()
 
@@ -604,6 +615,16 @@ class FirnModel:
 
     # Model equations
     def eqns(self, t, y):
+        """
+        Right-hand side of the ODE system used by ``scipy.integrate.solve_ivp``.
+
+        Args:
+            t (float): Nondimensional time.
+            y (np.ndarray): Flattened state vector.
+
+        Returns:
+            np.ndarray: Time derivative of the state vector.
+        """
         Ly = len(y)
 
         z_h = self.p["z_h"]
@@ -679,6 +700,18 @@ class FirnModel:
 
     # upwind_difference_matrix
     def upwind_difference_matrix(self, z0, zL, n, v):
+        """
+        Build a first-order upwind finite-difference matrix.
+
+        Args:
+            z0 (float): Left boundary coordinate.
+            zL (float): Right boundary coordinate.
+            n (int): Number of grid points.
+            v (float): Advection direction indicator (>0 or <0).
+
+        Returns:
+            np.ndarray: Dense upwind difference operator.
+        """
         # Adapted from Kerschbaum, Simon. (2020). Backstepping Control of Coupled Parabolic Systems with Varying Parameters: A Matlab Library (1.0). Zenodo. https://doi.org/10.5281/zenodo.4274740
         dz = (zL - z0) / (n - 1)
 
@@ -702,6 +735,7 @@ class FirnModel:
         return D / dz
 
     def quick_plots(self):
+        """Create a 2x2 quick-look figure for key simulation diagnostics."""
         fig, axs = plt.subplots(2, 2, figsize=(10, 10))
         self.results.FAC.plot(ax=axs[0, 0])
         self.results.z830.plot(ax=axs[0, 1])
