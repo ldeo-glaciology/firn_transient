@@ -7,7 +7,8 @@ on:
   pull_request:
 
 jobs:
-  test:
+  test-pip:
+    name: tests (pip)
     runs-on: ubuntu-latest
 
     steps:
@@ -30,3 +31,29 @@ jobs:
           MPLCONFIGDIR: /tmp/matplotlib
           XDG_CACHE_HOME: /tmp/.cache
         run: pytest -v
+
+  test-uv:
+    name: tests (uv)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install dependencies
+        run: uv sync --extra test
+
+      - name: Run tests
+        env:
+          MPLBACKEND: Agg
+          MPLCONFIGDIR: /tmp/matplotlib
+          XDG_CACHE_HOME: /tmp/.cache
+        run: uv run pytest -v
