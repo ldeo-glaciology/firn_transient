@@ -34,11 +34,15 @@ class FirnModel:
         plotting=1,
         saving_xt=1,
         dz=0.01,
+        Z = 1,
         save=1,
         sim_T=True,
         sim_r=True,
         PauseGrainEvolution_t=None,
         z0=100,
+        rtol = 1e-3,
+        atol = 1e-6,
+        method = "DOP853",
         r_s_dim=2.5e-07,  # grain size at the surface (0.5 mm)**2
         phi_s=0.5,
         n=1,
@@ -70,6 +74,10 @@ class FirnModel:
                 np.nan if PauseGrainEvolution_t is None else PauseGrainEvolution_t
             ),
             "z0": z0,
+            "rtol": rtol,
+            "atol": atol,
+            "method": method,
+            "Z": Z,   # nondimensional domain height
             "r_s_dim": r_s_dim,
             "phi_s": phi_s,
             "n": n,
@@ -86,7 +94,7 @@ class FirnModel:
         # 3. Define (or extract from self.p) the dimensional parameters of the system.
         b0_mpy = self.p["b0_mpy"]  # ice equivalent accumulation rate [m / yr]
         T_s_dim = self.p["T_s_dim"]  # upper surface temperature [K]
-        z_0 = self.p["z0"]  # initial column height [m]
+        z_0 = self.p["z0"]  # scale of z [m]
         dz_dim = self.p["dz"] * z_0  # dimensional numerical grid spacing [m]
         r2_s_dim = self.p["r_s_dim"]  # upper surface grain size [m**2] (0.5 mm)**2
         r2_f = 0.01**2  # maximum grain size [m**2] (1 cm)**2
@@ -145,11 +153,14 @@ class FirnModel:
         delta = r2_0 / r2_f
 
         ## 6. Set up real space grid in height coordinates.
-        z_init = np.arange(z_0, -dz_dim, -dz_dim)
-        N = z_init.size
+        # z_init = np.arange(z_0, -dz_dim, -dz_dim)
+        # N = z_init.size
 
-        ### Normalized depth coordinates.
-        z_h = np.flip(z_init) / z_0
+        # ### Normalized depth coordinates.
+        # z_h = np.flip(z_init) / z_0
+
+        N = int(self.p["Z"]/self.p["dz"]) + 1
+        z_h = np.linspace(0, self.p["Z"], N)
 
         ## 7. Initial conditions
         Ly0 = len(z_h) * 4 + 1
@@ -221,13 +232,13 @@ class FirnModel:
         if self.p["print_messages"]:
             print("*** Starting integration.")
         sol = integrate.solve_ivp(
-            self.eqns, self.p["t_span"], self.p["y0"]
-        )  # need to change back to self.eqns
+            self.eqns, self.p["t_span"], self.p["y0"], rtol=self.p["rtol"], atol=self.p["atol"], method=self.p["method"]
+        )  
         et = time.time()  # record end time
         elapsed_time = et - st  # get exectuion time
         if self.p["print_messages"]:
             if sol.status == 0:
-                print(f"*** Succesfully finished integration in  {elapsed_time:.3} seconds.")
+                print(f"*** Successfully finished integration in  {elapsed_time:.3} seconds.")
             else:
                 warnings.warn("*** Integrator failed to find a solution.")
 
@@ -269,12 +280,8 @@ class FirnModel:
             S_int = Height[i] * (1 - phi[:, i])
             Sigma = integrate.cumulative_trapezoid(S_int, z_h, initial=0)
             ### Compute velocity
-            W_int = -(Height[i] / Ar) * Sigma**n * phi[:, i] * m * np.exp(
-                lambda_c * T[:, i]
-            ) / r2[:, i]
-            W[:, i] = integrate.cumulative_trapezoid(W_int, z_h, initial=0) + nu(
-                0
-            ) * beta / (1 - phi_s)
+            W_int = -(Height[i] / Ar) * Sigma**n * phi[:, i] * m * np.exp(lambda_c * T[:, i]) / r2[:, i]
+            W[:, i] = integrate.cumulative_trapezoid(W_int, z_h, initial=0) + nu(t[i]) * beta / (1 - phi_s)
             ### Compute total mass in the column.
             M[i] = integrate.trapezoid(1 - phi[:, i], z[:, i] * z0)
             ### Compute firn air content
@@ -297,6 +304,7 @@ class FirnModel:
                 FAC=(["t"], FAC),
                 z830=(["t"], z830),
                 nu=(["t"], nu(t)),
+                elapsed_time=([], elapsed_time)
             ),
             coords=dict(
                 z_h=(["z_h"], self.p["z_h"]),
