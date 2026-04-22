@@ -30,11 +30,11 @@ class FirnModel:
         b0_mpy=0.1,
         beta=1,
         nu=None,
-        T_s_dim=253.15,
+        T_avg=253.15,
         plotting=1,
         saving_xt=1,
         dz=0.01,
-        Z = 1,
+        Z = 4,
         save=1,
         sim_T=True,
         sim_r=True,
@@ -63,7 +63,7 @@ class FirnModel:
             "b0_mpy": b0_mpy,
             "beta": beta,
             "nu": nu,
-            "T_s_dim": T_s_dim,
+            "T_avg": T_avg,
             "plotting": plotting,
             "saving_xt": saving_xt,
             "dz": dz,
@@ -93,9 +93,8 @@ class FirnModel:
 
         # 3. Define (or extract from self.p) the dimensional parameters of the system.
         b0_mpy = self.p["b0_mpy"]  # ice equivalent accumulation rate [m / yr]
-        T_s_dim = self.p["T_s_dim"]  # upper surface temperature [K]
-        z_0 = self.p["z0"]  # scale of z [m]
-        dz_dim = self.p["dz"] * z_0  # dimensional numerical grid spacing [m]
+        T_avg = self.p["T_avg"]  # upper surface temperature [K]
+        # dz_dim = self.p["dz"] * z_0  # dimensional numerical grid spacing [m]
         r2_s_dim = self.p["r_s_dim"]  # upper surface grain size [m**2] (0.5 mm)**2
         r2_f = 0.01**2  # maximum grain size [m**2] (1 cm)**2
         phi_s = self.p["phi_s"]  # upper surface porosity
@@ -118,9 +117,10 @@ class FirnModel:
         self.p["rho_i"] = rho_i  # ice density [kg / m**3]
 
         ### 4.2 Scaling parameters.
+        z_0 = 1 / (rho_i * g) * ((k_g * r2_f) / k_c * np.exp((E_c - E_g) / (R * T_avg)))**(1/n)
         b_0 = b0_mpy / spy
         h_0 = z_0
-        r2_0 = (h_0 * k_g * r2_f / b_0) * np.exp(-E_g / (R * T_s_dim))
+        r2_0 = (h_0 * k_g * r2_f / b_0) * np.exp(-E_g / (R * T_avg))
         t_0 = h_0 / b_0
         T_0 = G * z_0 / kappa_0
         sigma_0 = g * rho_i * h_0
@@ -140,15 +140,16 @@ class FirnModel:
         self.p["sigma_0"] = sigma_0
         self.p["w_0"] = w_0
         self.p["h_0"] = h_0
+        self.p["z_0"] = z_0
         self.p["T_0"] = T_0
 
         ### 4.3 Non-dimensional parameters.
-        lambda_c = E_c * T_0 / (R * T_s_dim**2.0)
-        lambda_g = E_g * T_0 / (R * T_s_dim**2.0)
-        gamma = (sigma_0 / 4.0) ** (1 - n)
-        Ar = r2_0 / (k_c * t_0 * sigma_0 * np.exp(-E_c / (R * T_s_dim))) / gamma
+        lambda_c = E_c / (R * T_avg)
+        lambda_g = E_g / (R * T_avg)
+        # gamma = (sigma_0 / 4.0) ** (1 - n)
+        # Ar = r2_0 / (k_c * t_0 * sigma_0 * np.exp(-E_c / (R * T_avg))) / gamma
         Fl = h_0 * G / (kappa_0 * T_0)
-        Pe = rho_i * c_i * b_0 * h_0 / kappa_0
+        Pe = rho_i * c_i * b_0 * z_0 / kappa_0
         beta = self.p["beta"]
         delta = r2_0 / r2_f
 
@@ -159,8 +160,8 @@ class FirnModel:
         # ### Normalized depth coordinates.
         # z_h = np.flip(z_init) / z_0
 
-        N = int(self.p["Z"]/self.p["dz"]) + 1
-        z_h = np.linspace(0, self.p["Z"], N)
+        N = 100 #int(self.p["Z"]/self.p["dz"]) + 1
+        z_h = np.linspace(0, 1, N)
 
         ## 7. Initial conditions
         Ly0 = len(z_h) * 4 + 1
@@ -185,10 +186,10 @@ class FirnModel:
         T_hat_init[:] = np.zeros(N)
 
         ### Dimensionless firn age.
-        A_hat_init[:] = z_h
+        A_hat_init[:] = 0*z_h
 
         ### domain height inital condition
-        H_init[:] = z_0 / h_0
+        H_init[:] = self.p["Z"]
 
         ## 8. Define gradient operator
         ### Finite difference gradient operator using two-point upwind scheme.
@@ -200,11 +201,11 @@ class FirnModel:
         self.p["spy"] = spy
         self.p["lambda_c"] = lambda_c
         self.p["lambda_g"] = lambda_g
-        self.p["Ar"] = Ar
+        # self.p["Ar"] = Ar
         self.p["delta"] = delta
         self.p["PecletNumber"] = Pe
         self.p["FluxNumber"] = Fl
-        self.p["ArthenNumber"] = Ar
+        # self.p["ArthenNumber"] = Ar
         self.p["y0"] = y0
         self.p["z_h"] = z_h
 
@@ -263,7 +264,7 @@ class FirnModel:
 
         n = self.p["n"]
         m = self.p["m"]
-        Ar = self.p["Ar"]
+        # Ar = self.p["Ar"]
         z_h = self.p["z_h"]
         lambda_c = self.p["lambda_c"]
         z0 = self.p["z0"]
@@ -280,7 +281,7 @@ class FirnModel:
             S_int = Height[i] * (1 - phi[:, i])
             Sigma = integrate.cumulative_trapezoid(S_int, z_h, initial=0)
             ### Compute velocity
-            W_int = -(Height[i] / Ar) * Sigma**n * phi[:, i] * m * np.exp(lambda_c * T[:, i]) / r2[:, i]
+            W_int = -Height[i] * Sigma**n * phi[:, i] * m * np.exp(lambda_c * T[:, i]) / r2[:, i]
             W[:, i] = integrate.cumulative_trapezoid(W_int, z_h, initial=0) + nu(t[i]) * beta / (1 - phi_s)
             ### Compute total mass in the column.
             M[i] = integrate.trapezoid(1 - phi[:, i], z[:, i] * z0)
@@ -373,8 +374,8 @@ class FirnModel:
             units="m",
             notes=(
                 "Computed as the depth integral of the porosity. Note that if "
-                "the firn is not completed compacted by the bottom of the "
-                "domain (i.e. phi(z_h=1,t) > 0) then this FAC value does not "
+                "the firn is not completly compacted by the bottom of the "
+                "domain (i.e. phi(z_h=1,t) > 0), then this FAC value does not "
                 "accurately represent the total firn air content, as some air "
                 "nominally exists beneath the bottom of the domain."
             ),
@@ -640,7 +641,7 @@ class FirnModel:
         lambda_g = self.p["lambda_g"]
         lambda_c = self.p["lambda_c"]
         delta = self.p["delta"]
-        Ar = self.p["ArthenNumber"]
+        # Ar = self.p["ArthenNumber"]
         nu = self.p["nu"]
         phi_s = self.p["phi_s"]  # upper surface porosity
         beta = self.p["beta"]
@@ -675,7 +676,7 @@ class FirnModel:
         sigma = integrate.cumulative_trapezoid(s_int, z_h, initial=0)
 
         ### Compute the ice velocity.
-        v_int = -(H / Ar) * sigma**n * phi**m * np.exp(lambda_c * T) / r2
+        v_int = -H * sigma**n * phi**m * np.exp(lambda_c * T) / r2
         w = integrate.cumulative_trapezoid(v_int, z_h, initial=0) + nu(t) * beta / (1 - phi_s)
 
         ### Column height.
@@ -683,7 +684,7 @@ class FirnModel:
 
         ### Change in porosity.
         dphidt[:] = (1 / H) * (D1 @ ((1 - phi) * w) + dHdt * z_h * dphidz)
-
+ 
         ### Change in square of the grain size.
         if self.p["sim_r"]:  # (only if sim_r ==1)
             dr2dt[:] = (1 / H) * (dHdt * z_h - w) * dr2dz + (1 - delta * r2) * np.exp(
