@@ -22,7 +22,6 @@ def configured_model() -> FirnModel:
     model = FirnModel()
     model.setup(
         dz=0.2,
-        z0=20,
         simDuration=0.2,
         scaleDuration=False,
         print_messages=False,
