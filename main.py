@@ -3,7 +3,6 @@ import warnings
 
 import matplotlib.pyplot as plt
 import numpy as np
-import numpy.matlib
 import xarray as xr
 from scipy import integrate, interpolate
 from scipy.sparse import spdiags
