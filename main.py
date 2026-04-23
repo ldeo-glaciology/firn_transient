@@ -39,7 +39,6 @@ class FirnModel:
         sim_T=True,
         sim_r=True,
         PauseGrainEvolution_t=None,
-        z0=100,
         rtol = 1e-3,
         atol = 1e-6,
         method = "DOP853",
@@ -73,7 +72,6 @@ class FirnModel:
             "PauseGrainEvolution_t": (
                 np.nan if PauseGrainEvolution_t is None else PauseGrainEvolution_t
             ),
-            "z0": z0,
             "rtol": rtol,
             "atol": atol,
             "method": method,
@@ -186,7 +184,7 @@ class FirnModel:
         T_hat_init[:] = np.zeros(N)
 
         ### Dimensionless firn age.
-        A_hat_init[:] = 0*z_h
+        A_hat_init[:] = np.linspace(0, self.p["Z"], N)
 
         ### domain height inital condition
         H_init[:] = self.p["Z"]
@@ -267,7 +265,7 @@ class FirnModel:
         # Ar = self.p["Ar"]
         z_h = self.p["z_h"]
         lambda_c = self.p["lambda_c"]
-        z0 = self.p["z0"]
+        z0 = self.p["z_0"]
         nu = self.p["nu"]
         phi_s = self.p["phi_s"]  # upper surface porosity
 
@@ -346,7 +344,7 @@ class FirnModel:
         out.h.attrs = dict(
             name="height",
             long_name="nondimensional domain height",
-            scale=self.p["z0"],
+            scale=self.p["z_0"],
             scale_units="m",
         )
 
@@ -384,7 +382,7 @@ class FirnModel:
         out.z830.attrs = dict(
             name="firn thickness",
             long_name="nondimensional firn thickenss",
-            scale=self.p["z0"],
+            scale=self.p["z_0"],
             scale_units="m",
         )
 
@@ -410,7 +408,7 @@ class FirnModel:
         out.z.attrs = dict(
             name="depth",
             long_name="nondimensional depth, irregular grid",
-            scale=self.p["z0"],
+            scale=self.p["z_0"],
             scale_units="m",
         )
 
@@ -547,7 +545,7 @@ class FirnModel:
         interpolated_values = np.empty_like(self.results.t.values)
         for i in range(len(self.results.t.values)):
             f = interpolate.interp1d(
-                self.results.z.isel(t=i).values * self.p["z0"],
+                self.results.z.isel(t=i).values * self.p["z_0"],
                 self.results[var_name].isel(t=i).values,
                 bounds_error=False,
             )
@@ -580,7 +578,7 @@ class FirnModel:
         This will produce a new variable called A_r and a new dimension cooridnate called z_r.
         """
 
-        z_q = np.linspace(0, 1.2, round(self.p["N"] * 1.2))  # query points for interpolation
+        z_q = np.linspace(0, self.p['Z'], round(self.p["N"]))  # query points for interpolation
         Nz = len(z_q)
         Nt = len(self.results.t.values)
         interpolated_values = np.empty((Nz, Nt))
@@ -611,7 +609,7 @@ class FirnModel:
         self.results[name_for_new_var].attrs = dict(
             name=new_name_for_xarray,
             long_name=new_long_name_for_xarray,
-            depth_scale=self.p["z0"],
+            depth_scale=self.p["z_0"],
             depth_scale_units="m",
         )
 
