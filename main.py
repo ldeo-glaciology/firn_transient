@@ -29,6 +29,7 @@ class FirnModel:
         b0_mpy=0.1,
         beta=1,
         nu=None,
+        Tsurf=None,
         T_avg=253.15,
         plotting=1,
         saving_xt=1,
@@ -128,7 +129,14 @@ class FirnModel:
             def nu(t):
                 return np.ones_like(t)
 
-            self.p["nu"] = nu
+        self.p["nu"] = nu
+
+        if Tsurf is None:
+            def Tsurf(t):
+                return np.zeros_like(t)
+
+        self.p["Tsurf"] = Tsurf
+
 
         # save scales 
         self.p["b_0"] = b_0
@@ -281,16 +289,24 @@ class FirnModel:
             ### Compute stress
             S_int = Height[i] * (1 - phi[:, i])
             Sigma = integrate.cumulative_trapezoid(S_int, z_h, initial=0)
+            
             ### Compute velocity
             W_int = -Height[i] * Sigma**n * phi[:, i] * m * np.exp(lambda_c * tau * T[:, i]) / r2[:, i]
             W[:, i] = integrate.cumulative_trapezoid(W_int, z_h, initial=0) + nu(t[i]) * beta / (1 - phi_s)
+            
             ### Compute total mass in the column.
             M[i] = integrate.trapezoid(1 - phi[:, i], z[:, i] * z0)
+            
             ### Compute firn air content
             FAC[i] = integrate.trapezoid(phi[:, i], z[:, i] * z0)
+            
             ### Compute the firn thickness
             f = interpolate.interp1d(phi[:, i], z[:, i], bounds_error=False)
             z830[i] = f(1 - 830 / self.p["rho_i"])
+
+            ### add temperature surface condition onto T (it was taked acount of in the computation, it was just not saved before)
+            T[0, i] = self.p["Tsurf"](t[i])
+
 
         ### Create output xarray
         out = xr.Dataset(
@@ -639,6 +655,7 @@ class FirnModel:
 
         z_h = self.p["z_h"]
         D1 = self.p["D1"]
+        Tsurf = self.p['Tsurf']
         lambda_g = self.p["lambda_g"]
         lambda_c = self.p["lambda_c"]
         delta = self.p["delta"]
@@ -652,11 +669,15 @@ class FirnModel:
         dz = self.p['dz']
 
         ### Collect the simulation variables.
-        phi = y[:-1:4]
-        r2 = y[1:-1:4]
-        T = y[2:-1:4]
-        A = y[3:-1:4]
-        H = y[-1]
+        phi = y[:-1:4].copy()
+        r2 = y[1:-1:4].copy()
+        T = y[2:-1:4].copy()
+        A = y[3:-1:4].copy()
+        H = y[-1].copy()
+
+        # impose the surface BC on T, just of this iteration of the solver, based on the time, this value is not saved in y becasue we made a copy
+
+        T[0] = Tsurf(t)
 
         ### create dydt vector
         dydt = np.empty_like(y)
