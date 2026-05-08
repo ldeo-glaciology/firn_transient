@@ -29,11 +29,12 @@ class FirnModel:
         b0_mpy=0.1,
         beta=1,
         nu=None,
+        Tsurf=None,
         T_avg=253.15,
         plotting=1,
         saving_xt=1,
         dz=0.01,
-        Z = 4,
+        Z = 10,
         save=1,
         sim_T=True,
         sim_r=True,
@@ -119,7 +120,7 @@ class FirnModel:
         h_0 = z_0
         r2_0 = (h_0 * k_g * r2_f / b_0) * np.exp(-E_g / (R * T_avg))
         t_0 = h_0 / b_0
-        T_0 = G * z_0 / kappa_0
+        T_0 = G * z_0 / kappa_0  # this is the scale of \overline{T}, i.e. the \overline{T} = T - T_{avg} (see notes) 
         sigma_0 = g * rho_i * h_0
         w_0 = b_0  # scale of the vertical velocity is the accumulation rate
 
@@ -128,9 +129,16 @@ class FirnModel:
             def nu(t):
                 return np.ones_like(t)
 
-            self.p["nu"] = nu
+        self.p["nu"] = nu
 
-        # save scales for use in plotting later
+        if Tsurf is None:
+            def Tsurf(t):
+                return np.zeros_like(t)
+
+        self.p["Tsurf"] = Tsurf
+
+
+        # save scales 
         self.p["b_0"] = b_0
         self.p["r2_0"] = r2_0
         self.p["t_0"] = t_0
@@ -149,6 +157,7 @@ class FirnModel:
         Pe = rho_i * c_i * b_0 * z_0 / kappa_0
         beta = self.p["beta"]
         delta = r2_0 / r2_f
+        tau = T_0/T_avg
 
         ## 6. Set up real space grid in height coordinates.
         # z_init = np.arange(z_0, -dz_dim, -dz_dim)
@@ -179,8 +188,8 @@ class FirnModel:
         else:
             r2_hat_init[:] = r2_s_dim / r2_0 + 0 * z_h
 
-        ### Dimensionless temperature (mostly not used)
-        T_hat_init[:] = np.zeros(N)
+        ### Dimensionless temperature 
+        T_hat_init[:] = np.linspace(0, -self.p["Z"], N)
 
         ### Dimensionless firn age.
         A_hat_init[:] = np.linspace(0, self.p["Z"], N)
@@ -200,11 +209,13 @@ class FirnModel:
         self.p["lambda_g"] = lambda_g
         # self.p["Ar"] = Ar
         self.p["delta"] = delta
-        self.p["PecletNumber"] = Pe
+        self.p["Pe"] = Pe
         self.p["FluxNumber"] = Fl
         # self.p["ArthenNumber"] = Ar
         self.p["y0"] = y0
         self.p["z_h"] = z_h
+        self.p['tau'] = tau
+        self.p['G'] = G
 
         if self.p["print_messages"]:
             print("*** Setup complete.")
@@ -266,6 +277,7 @@ class FirnModel:
         lambda_c = self.p["lambda_c"]
         z0 = self.p["z_0"]
         nu = self.p["nu"]
+        tau = self.p['tau']
         phi_s = self.p["phi_s"]  # upper surface porosity
 
         ### compute velocity, mass, firn air content and firn thickenss
@@ -277,16 +289,24 @@ class FirnModel:
             ### Compute stress
             S_int = Height[i] * (1 - phi[:, i])
             Sigma = integrate.cumulative_trapezoid(S_int, z_h, initial=0)
+            
             ### Compute velocity
-            W_int = -Height[i] * Sigma**n * phi[:, i] * m * np.exp(lambda_c * T[:, i]) / r2[:, i]
+            W_int = -Height[i] * Sigma**n * phi[:, i] * m * np.exp(lambda_c * tau * T[:, i]) / r2[:, i]
             W[:, i] = integrate.cumulative_trapezoid(W_int, z_h, initial=0) + nu(t[i]) * beta / (1 - phi_s)
+            
             ### Compute total mass in the column.
             M[i] = integrate.trapezoid(1 - phi[:, i], z[:, i] * z0)
+            
             ### Compute firn air content
             FAC[i] = integrate.trapezoid(phi[:, i], z[:, i] * z0)
+            
             ### Compute the firn thickness
             f = interpolate.interp1d(phi[:, i], z[:, i], bounds_error=False)
             z830[i] = f(1 - 830 / self.p["rho_i"])
+
+            ### add temperature surface condition onto T (it was taked acount of in the computation, it was just not saved before)
+            T[0, i] = self.p["Tsurf"](t[i])
+
 
         ### Create output xarray
         out = xr.Dataset(
@@ -577,7 +597,7 @@ class FirnModel:
         This will produce a new variable called A_r and a new dimension cooridnate called z_r.
         """
 
-        z_q = np.linspace(0, self.p['Z'], round(self.p["N"]))  # query points for interpolation
+        z_q = np.linspace(0, self.p['Z']*1.2, round(self.p["N"]))  # query points for interpolation
         Nz = len(z_q)
         Nt = len(self.results.t.values)
         interpolated_values = np.empty((Nz, Nt))
@@ -635,6 +655,7 @@ class FirnModel:
 
         z_h = self.p["z_h"]
         D1 = self.p["D1"]
+        Tsurf = self.p['Tsurf']
         lambda_g = self.p["lambda_g"]
         lambda_c = self.p["lambda_c"]
         delta = self.p["delta"]
@@ -644,13 +665,19 @@ class FirnModel:
         beta = self.p["beta"]
         n = self.p["n"]
         m = self.p["m"]
+        tau = self.p['tau']
+        dz = self.p['dz']
 
         ### Collect the simulation variables.
-        phi = y[:-1:4]
-        r2 = y[1:-1:4]
-        T = y[2:-1:4]
-        A = y[3:-1:4]
-        H = y[-1]
+        phi = y[:-1:4].copy()
+        r2 = y[1:-1:4].copy()
+        T = y[2:-1:4].copy()
+        A = y[3:-1:4].copy()
+        H = y[-1].copy()
+
+        # impose the surface BC on T, just of this iteration of the solver, based on the time, this value is not saved in y becasue we made a copy
+
+        T[0] = Tsurf(t)
 
         ### create dydt vector
         dydt = np.empty_like(y)
@@ -673,7 +700,7 @@ class FirnModel:
         sigma = integrate.cumulative_trapezoid(s_int, z_h, initial=0)
 
         ### Compute the ice velocity.
-        v_int = -H * sigma**n * phi**m * np.exp(lambda_c * T) / r2
+        v_int = -H * sigma**n * phi**m * np.exp(lambda_c * tau * T) / r2
         w = integrate.cumulative_trapezoid(v_int, z_h, initial=0) + nu(t) * beta / (1 - phi_s)
 
         ### Column height.
@@ -685,13 +712,16 @@ class FirnModel:
         ### Change in square of the grain size.
         if self.p["sim_r"]:  # (only if sim_r ==1)
             dr2dt[:] = (1 / H) * (dHdt * z_h - w) * dr2dz + (1 - delta * r2) * np.exp(
-                lambda_g * T
+                lambda_g * tau * T
             )
         else:
             dr2dt[:] = 0 * r2
 
-        ### Change in temperature.
-        dTdt[:] = 0
+        ### Change in temperature. 
+        K = (1 - phi)**2
+        K_stag = 0.5 * (K[1:] + K[:-1])        
+        dTdt[1:-1] =  1/(self.p['Pe'] * H**2 * (1 - phi[1:-1]) * dz**2) *   (K_stag[1:]*T[2:] - (K_stag[1:] + K_stag[:-1])*T[1:-1] + K_stag[:-1]*T[:-2]) \
+                         + (1 / H) * (dHdt * z_h[1:-1] - w[1:-1]) * dTdz[1:-1]
 
         ### Change in age.
         dAdt[:] = 1 + (1 / H) * (dHdt * z_h - w) * dAdz
@@ -701,7 +731,7 @@ class FirnModel:
         dr2dt[0] = 0
         dAdt[0] = 0
         dTdt[0] = 0
-
+        dTdt[-1] = 1/(self.p['Pe'] * H**2 * (1 - phi[-1]) * dz**2) * (K[-1]*(T[-2] - 2*dz*H/K[-1] - T[-1]) - K_stag[-1]*(T[-1] - T[-2]))  +  (w[-1] - z_h[-1]*dHdt[0]) / K[-1]   # derived by substituting the boundary condidion (dTdz = -h/kappa) into the dhdt ewn, while taking acound of a ghost point in the second derivative. 
         return dydt
 
     # upwind_difference_matrix
